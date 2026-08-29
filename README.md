@@ -17,7 +17,7 @@ Source organization: `opto-sync`
 
 | Source | Commit | Branch observed |
 |---|---:|---|
-| `opto-sync/syncer.rs` | `27692fb7c7423999eaff45afa5bd64b1bf86ad57` | `main` |
+| `opto-sync/syncer.rs` | `61bbd6c99d6356c5cd7c12bdc78926ca29d06f20` | `main` |
 
 ## Dependency lanes
 
@@ -29,5 +29,5 @@ Source organization: `opto-sync`
 
 ## Running
 
-The pull-request workflow validates the generated contract without cross-organization credentials. Full integration is intentionally release-gated until required source repositories and organization read credentials are present. Run the profile-specific checks recorded in `test-plan.json` after materializing the submodule, Zed, or native-package lane.
+The pull-request workflow validates the generated contract without cross-organization credentials. Product-specific files outside the generated file set are preserved and must add executable assertions without weakening the base contract. Full integration is intentionally release-gated until required source repositories and organization read credentials are present. The generic protected lane reports source-access status only; source certification requires a product-specific executable overlay. A skipped integration job is not source certification. Run the profile-specific checks recorded in `test-plan.json` after materializing the submodule, Zed, or native-package lane.
 
