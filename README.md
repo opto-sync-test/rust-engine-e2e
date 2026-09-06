@@ -17,7 +17,7 @@ Source organization: `opto-sync`
 
 | Source | Commit | Branch observed |
 |---|---:|---|
-| `opto-sync/syncer.rs` | `27692fb7c7423999eaff45afa5bd64b1bf86ad57` | `main` |
+| `opto-sync/syncer.rs` | `f80477794c9ce62038f05cfe462bd553aa4cd97b` | `main` |
 
 ## Dependency lanes
 
