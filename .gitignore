@@ -12,3 +12,14 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
+
+# --- carried over from the grafted branch rescue/orphan-8350f486422f-harden-the-wasm-surface-and-certify-it-i ---
+*.dll
+*.dylib
+*.so
+/pkg-web/
+/pkg/
+/target/
+/tests/wasm/node_modules/
+/tests/wasm/playwright-report/
+/tests/wasm/test-results/
