@@ -12,3 +12,10 @@ tmp
 temp
 tmp/worktrees
 temp/worktrees
+
+# --- carried over from the grafted branch rescue/orphan-c08ae49534f8-feat-add-bounded-causal-envelopes-for-of ---
+*.dll
+*.dylib
+*.so
+/pkg/
+/target/
