@@ -39,6 +39,7 @@ jobs:
           repository: ORESoftware/axum-leptos-dioxus-unified-ssr-test
           ref: d48cab09e62a13926bc72f1ac3473492776a431b
           path: vendor/html-renderer-server
+          token: ${{ secrets.TEST_FLEET_READ_TOKEN || github.token }}
           persist-credentials: false
 
       - name: Install Node 22.16
