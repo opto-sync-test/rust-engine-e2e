@@ -1,0 +1,115 @@
+name: Opto Sync HTML renderer canary
+
+on:
+  pull_request:
+    paths:
+      - 'fixtures/html-renderers/**'
+      - '.github/workflows/html-renderer-opto-sync.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: html-renderer-opto-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mash-leptos-dioxus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out canary
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check out exact Opto Sync browser client
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: opto-sync/opto-sync-clients
+          ref: 2d990a0400689ed62ed2c96368b3a26547b23e5a
+          path: vendor/opto-sync-clients
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Check out exact MASH Leptos Dioxus server authority
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ORESoftware/axum-leptos-dioxus-unified-ssr-test
+          ref: d48cab09e62a13926bc72f1ac3473492776a431b
+          path: vendor/html-renderer-server
+          token: ${{ secrets.TEST_FLEET_READ_TOKEN || github.token }}
+          persist-credentials: false
+
+      - name: Install Node 22.16
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+
+      - name: Install certified Rust toolchain
+        uses: dtolnay/rust-toolchain@39b0b3842c7e8bbf6904c0bfc3d9006fdd4dc4e0 # 1.88.0
+
+      - name: Build exact Opto Sync browser client
+        run: |
+          set -euo pipefail
+          (cd vendor/opto-sync-clients/syncer.c/bindings/typescript && npm ci)
+          (cd vendor/opto-sync-clients/clients/ts && npm ci && npm run build)
+
+      - name: Bundle renderer-neutral Opto Sync DOM island
+        run: |
+          set -euo pipefail
+          vendor/opto-sync-clients/clients/ts/node_modules/.bin/esbuild \
+            fixtures/html-renderers/browser.ts \
+            --bundle \
+            --format=esm \
+            --platform=browser \
+            --outfile=fixtures/html-renderers/client.js
+
+      - name: Compile exact server-renderer canary adapter
+        run: |
+          set -euo pipefail
+          cp fixtures/html-renderers/server_canary.rs \
+             vendor/html-renderer-server/src/bin/opto_sync_canary.rs
+          cargo build --locked \
+            --manifest-path vendor/html-renderer-server/Cargo.toml \
+            --bin opto_sync_canary
+
+      - name: Install Chromium for real browser execution
+        run: |
+          set -euo pipefail
+          (cd vendor/opto-sync-clients/clients/ts && npx playwright install --with-deps chromium)
+
+      - name: Exercise SSR HTML plus browser IndexedDB mutation replay
+        run: |
+          set -euo pipefail
+          (
+            cd vendor/html-renderer-server
+            exec ./target/debug/opto_sync_canary
+          ) > /tmp/opto-sync-html-renderer-server.log 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:38081/htmx/insights >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/opto-sync-html-renderer-server.log
+            exit 1
+          fi
+
+          node fixtures/html-renderers/browser.test.mjs
+
+      - name: Print server log on failure
+        if: failure()
+        run: tail -n 250 /tmp/opto-sync-html-renderer-server.log || true
