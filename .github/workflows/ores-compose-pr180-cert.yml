@@ -16,7 +16,6 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-compose
       SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
-      BASE_SHA: b0134dca90af18d642a331603b0538f3964967a1
     steps:
       - name: Check out certification harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +42,6 @@ jobs:
             exit 1
           }
           printf '%s\n' "$actual" > exact-head.sha
-          git -C candidate diff --check "$BASE_SHA" "$SOURCE_SHA" || true
 
       - name: Install exact reviewed Rust toolchain
         shell: bash
@@ -86,7 +84,9 @@ jobs:
           : > ../inode-regression.log
           for attempt in $(seq 1 50); do
             echo "attempt=$attempt" | tee -a ../inode-regression.log
-            cargo test replacement_after_admission_is_detected -- --exact --nocapture 2>&1 | tee -a ../inode-regression.log
+            output="$(cargo test replacement_after_admission_is_detected -- --nocapture 2>&1)"
+            printf '%s\n' "$output" | tee -a ../inode-regression.log
+            printf '%s\n' "$output" | grep -Eq '1 passed; 0 failed|test .*replacement_after_admission_is_detected .* ok'
           done
 
       - name: Upload immutable certification evidence
