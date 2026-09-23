@@ -16,32 +16,38 @@ jobs:
     env:
       SOURCE_REPO: ORESoftware/ores-compose
       SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
+      BASE_SHA: c505136a2ed01dc9d3d428dff89557261b219922
     steps:
       - name: Check out certification harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Check out exact candidate head
+      - name: Check out exact candidate history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_SHA }}
           path: candidate
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
           token: ${{ secrets.TEST_FLEET_READ_TOKEN || github.token }}
 
-      - name: Prove immutable candidate identity
+      - name: Prove immutable inputs and synthesize current-main integration
         shell: bash
         run: |
           set -euo pipefail
           actual="$(git -C candidate rev-parse HEAD)"
           test "$actual" = "$SOURCE_SHA" || {
-            echo "expected $SOURCE_SHA, got $actual" >&2
+            echo "expected candidate $SOURCE_SHA, got $actual" >&2
             exit 1
           }
+          git -C candidate cat-file -e "$BASE_SHA^{commit}"
           printf '%s\n' "$actual" > exact-head.sha
+          printf '%s\n' "$BASE_SHA" > exact-base.sha
+          git -C candidate -c user.name='ORES certification' -c user.email='certification@invalid' merge --no-commit --no-ff "$BASE_SHA"
+          printf '%s\n' "$(git -C candidate write-tree)" > integrated-tree.sha
+          test -f candidate/tests/formal_dependency_graph_exhaustive.rs
 
       - name: Install exact reviewed Rust toolchain
         shell: bash
@@ -52,14 +58,14 @@ jobs:
           rustc --version | tee rustc-version.txt
           grep -F 'rustc 1.98.1' rustc-version.txt
 
-      - name: Format exact candidate
+      - name: Format integrated tree
         shell: bash
         working-directory: candidate
         run: |
           set -o pipefail
           cargo fmt --all --check 2>&1 | tee ../cargo-fmt.log
 
-      - name: Clippy exact candidate
+      - name: Clippy integrated tree
         if: always()
         shell: bash
         working-directory: candidate
@@ -67,7 +73,7 @@ jobs:
           set -o pipefail
           cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tee ../cargo-clippy.log
 
-      - name: Full exact-head tests
+      - name: Full integrated tests including exhaustive graph proof
         if: always()
         shell: bash
         working-directory: candidate
@@ -93,9 +99,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ores-compose-pr180-84f1e2b-certification
+          name: ores-compose-pr180-current-main-certification
           path: |
             exact-head.sha
+            exact-base.sha
+            integrated-tree.sha
             rustc-version.txt
             cargo-fmt.log
             cargo-clippy.log
