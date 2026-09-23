@@ -1,0 +1,87 @@
+name: certify ores-reactive-maps PR 3
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-reactive-maps-pr3-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out certification harness
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check out exact source head
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-reactive-maps
+          ref: 4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4
+          path: source
+          persist-credentials: false
+      - name: Assert exact source revision
+        shell: bash
+        run: test "$(git -C source rev-parse HEAD)" = "4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install TypeScript package dependencies
+        working-directory: source/src/typescript
+        run: npm install --ignore-scripts
+      - name: Run TypeScript tests
+        working-directory: source/src/typescript
+        run: npm test
+      - name: Build TypeScript package
+        working-directory: source/src/typescript
+        run: npm run build
+
+  go:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-reactive-maps
+          ref: 4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache-dependency-path: source/src/go/go.mod
+      - working-directory: source/src/go
+        run: go test -race ./...
+
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-reactive-maps
+          ref: 4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4
+          path: source
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - working-directory: source/src/rust
+        run: cargo test --all-targets
+
+  gleam:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-reactive-maps
+          ref: 4cc5e4c2c8edda6ef2173be7f2929ed23d3308f4
+          path: source
+          persist-credentials: false
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.15.4'
+          rebar3-version: '3'
+      - working-directory: source/src/gleam
+        run: gleam test
