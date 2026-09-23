@@ -22,14 +22,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out exact ores-compose candidate
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          repository: ORESoftware/ores-compose
-          ref: ${{ env.EXPECTED_SHA }}
-          path: ores-compose
-          persist-credentials: false
-          fetch-depth: 0
+      - name: Fetch exact public ores-compose candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git init ores-compose
+          cd ores-compose
+          git remote add origin https://github.com/ORESoftware/ores-compose.git
+          git -c protocol.version=2 fetch --no-tags --depth=128 origin \
+            "$EXPECTED_BASE_SHA" "$EXPECTED_SHA"
+          git checkout --detach "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Assert exact review surface
         working-directory: ores-compose
