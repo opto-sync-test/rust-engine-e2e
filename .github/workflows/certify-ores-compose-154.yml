@@ -1,0 +1,99 @@
+name: certify ores-compose PR 154
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-compose-154.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      EXPECTED_SHA: f45c907a46878b93a35b207e1cee79687a83461c
+      EXPECTED_BASE_SHA: fb6d0b2aeb7d87c598e006bed050162b55e0c9f0
+    steps:
+      - name: Check out certification carrier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Check out exact ores-compose candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.EXPECTED_SHA }}
+          path: ores-compose
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Assert exact review surface
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
+          actual="$(git diff --name-only "$EXPECTED_BASE_SHA"..HEAD | sort | tr '\n' ' ')"
+          expected='contracts/json-schema/contract.schema.json contracts/typespec/main.tsp src/config_loader.rs src/local_up_process.rs src/service_environment.rs '
+          test "$actual" = "$expected"
+          git diff --check "$EXPECTED_BASE_SHA"..HEAD
+
+      - name: Install exact reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | grep -F 'rustc 1.98.1'
+
+      - name: Check changed-file formatting
+        working-directory: ores-compose
+        run: rustfmt --edition 2021 --check src/config_loader.rs src/local_up_process.rs src/service_environment.rs
+
+      - name: Locked all-target compile
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Full Rust tests
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Strict Clippy
+        working-directory: ores-compose
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p target
+          npx --yes \
+            --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/db0f1e66b2a65cad43c909aa558ae00c6a91578c.tar.gz \
+            tjsv check \
+            --typespec=contracts/typespec/main.tsp \
+            --schema=contracts/json-schema/contract.schema.json \
+            --instances=contracts/instances \
+            --report=target/compose-contract-parity.json \
+            --quiet
+
+      - name: Assert candidate remained immutable
+        if: always()
+        working-directory: ores-compose
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain)"
+          echo ORES_COMPOSE_154_CERT_PASS
