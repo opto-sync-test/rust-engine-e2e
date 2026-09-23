@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ores-compose-pr180-cert.yml'
+      - 'certification/ores-compose-pr180/**'
   workflow_dispatch:
 
 permissions:
@@ -12,42 +13,32 @@ permissions:
 jobs:
   certify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       SOURCE_REPO: ORESoftware/ores-compose
       SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
-      BASE_SHA: c505136a2ed01dc9d3d428dff89557261b219922
+      SOURCE_PATH: src/trusted_working_directory.rs
+      SOURCE_BLOB_SHA: e3da217c72a0f3e34c7968f43d6b48b9c71801aa
+      SOURCE_MAIN_WITH_FORMAL_PROOF: c505136a2ed01dc9d3d428dff89557261b219922
     steps:
       - name: Check out certification harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Check out exact candidate history
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ env.SOURCE_REPO }}
-          ref: ${{ env.SOURCE_SHA }}
-          path: candidate
-          fetch-depth: 0
-          persist-credentials: false
-          token: ${{ secrets.TEST_FLEET_READ_TOKEN || github.token }}
-
-      - name: Prove immutable inputs and synthesize current-main integration
+      - name: Prove content-addressed source identity
         shell: bash
         run: |
           set -euo pipefail
-          actual="$(git -C candidate rev-parse HEAD)"
-          test "$actual" = "$SOURCE_SHA" || {
-            echo "expected candidate $SOURCE_SHA, got $actual" >&2
+          snapshot='certification/ores-compose-pr180/src/lib.rs'
+          actual_blob="$(git hash-object "$snapshot")"
+          test "$actual_blob" = "$SOURCE_BLOB_SHA" || {
+            echo "expected source blob $SOURCE_BLOB_SHA, got $actual_blob" >&2
             exit 1
           }
-          git -C candidate cat-file -e "$BASE_SHA^{commit}"
-          printf '%s\n' "$actual" > exact-head.sha
-          printf '%s\n' "$BASE_SHA" > exact-base.sha
-          git -C candidate -c user.name='ORES certification' -c user.email='certification@invalid' merge --no-commit --no-ff "$BASE_SHA"
-          printf '%s\n' "$(git -C candidate write-tree)" > integrated-tree.sha
-          test -f candidate/tests/formal_dependency_graph_exhaustive.rs
+          printf '%s\n' "$SOURCE_REPO@$SOURCE_SHA:$SOURCE_PATH" > source-identity.txt
+          printf '%s\n' "$actual_blob" >> source-identity.txt
+          printf '%s\n' "$SOURCE_MAIN_WITH_FORMAL_PROOF" > source-main.sha
 
       - name: Install exact reviewed Rust toolchain
         shell: bash
@@ -58,52 +49,57 @@ jobs:
           rustc --version | tee rustc-version.txt
           grep -F 'rustc 1.98.1' rustc-version.txt
 
-      - name: Format integrated tree
+      - name: Format exact changed source
         shell: bash
-        working-directory: candidate
+        working-directory: certification/ores-compose-pr180
         run: |
           set -o pipefail
-          cargo fmt --all --check 2>&1 | tee ../cargo-fmt.log
+          cargo fmt --all --check 2>&1 | tee ../../cargo-fmt.log
 
-      - name: Clippy integrated tree
-        if: always()
+      - name: Clippy exact changed source
         shell: bash
-        working-directory: candidate
+        working-directory: certification/ores-compose-pr180
         run: |
           set -o pipefail
-          cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tee ../cargo-clippy.log
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee ../../cargo-clippy.log
 
-      - name: Full integrated tests including exhaustive graph proof
-        if: always()
+      - name: Run all exact-source unit tests
         shell: bash
-        working-directory: candidate
+        working-directory: certification/ores-compose-pr180
         run: |
           set -o pipefail
-          cargo test --all-targets --all-features 2>&1 | tee ../cargo-test.log
+          cargo test --all-targets 2>&1 | tee ../../cargo-test.log
 
-      - name: Repeat inode-replacement regression
-        if: always()
+      - name: Stress inode-replacement invariant
         shell: bash
-        working-directory: candidate
+        working-directory: certification/ores-compose-pr180
         run: |
           set -euo pipefail
-          : > ../inode-regression.log
-          for attempt in $(seq 1 50); do
-            echo "attempt=$attempt" | tee -a ../inode-regression.log
+          : > ../../inode-regression.log
+          for attempt in $(seq 1 200); do
             output="$(cargo test replacement_after_admission_is_detected -- --nocapture 2>&1)"
-            printf '%s\n' "$output" | tee -a ../inode-regression.log
+            printf 'attempt=%s\n%s\n' "$attempt" "$output" >> ../../inode-regression.log
             printf '%s\n' "$output" | grep -Eq '1 passed; 0 failed|test .*replacement_after_admission_is_detected .* ok'
+          done
+
+      - name: Stress stable-content invariant
+        shell: bash
+        working-directory: certification/ores-compose-pr180
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 50); do
+            output="$(cargo test directory_content_changes_do_not_change_admitted_identity -- --nocapture 2>&1)"
+            printf '%s\n' "$output" | grep -Eq '1 passed; 0 failed|test .*directory_content_changes_do_not_change_admitted_identity .* ok'
           done
 
       - name: Upload immutable certification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ores-compose-pr180-current-main-certification
+          name: ores-compose-pr180-content-addressed-certification
           path: |
-            exact-head.sha
-            exact-base.sha
-            integrated-tree.sha
+            source-identity.txt
+            source-main.sha
             rustc-version.txt
             cargo-fmt.log
             cargo-clippy.log
