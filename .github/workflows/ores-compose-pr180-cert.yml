@@ -1,4 +1,4 @@
-name: certify ores-compose PR 180
+name: certify ores-compose PR 181
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 20
     env:
       SOURCE_REPO: ORESoftware/ores-compose
-      SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
+      SOURCE_SHA: 422266ec38564293a69954894b9cb710cf8a7427
       SOURCE_PATH: src/trusted_working_directory.rs
       SOURCE_BLOB_SHA: e3da217c72a0f3e34c7968f43d6b48b9c71801aa
       SOURCE_MAIN_WITH_FORMAL_PROOF: c505136a2ed01dc9d3d428dff89557261b219922
@@ -96,7 +96,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ores-compose-pr180-content-addressed-certification
+          name: ores-compose-pr181-content-addressed-certification
           path: |
             source-identity.txt
             source-main.sha
