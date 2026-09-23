@@ -1,0 +1,105 @@
+name: certify ores-compose PR 180
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ores-compose-pr180-cert.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_REPO: ORESoftware/ores-compose
+      SOURCE_SHA: 84f1e2bf51bd00e5f33e7751b78bcb86ad8c3abf
+      BASE_SHA: b0134dca90af18d642a331603b0538f3964967a1
+    steps:
+      - name: Check out certification harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out exact candidate head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_SHA }}
+          path: candidate
+          fetch-depth: 1
+          persist-credentials: false
+          token: ${{ secrets.TEST_FLEET_READ_TOKEN || github.token }}
+
+      - name: Prove immutable candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C candidate rev-parse HEAD)"
+          test "$actual" = "$SOURCE_SHA" || {
+            echo "expected $SOURCE_SHA, got $actual" >&2
+            exit 1
+          }
+          printf '%s\n' "$actual" > exact-head.sha
+          git -C candidate diff --check "$BASE_SHA" "$SOURCE_SHA" || true
+
+      - name: Install exact reviewed Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt,clippy
+          rustup default 1.98.1
+          rustc --version | tee rustc-version.txt
+          grep -F 'rustc 1.98.1' rustc-version.txt
+
+      - name: Format exact candidate
+        shell: bash
+        working-directory: candidate
+        run: |
+          set -o pipefail
+          cargo fmt --all --check 2>&1 | tee ../cargo-fmt.log
+
+      - name: Clippy exact candidate
+        if: always()
+        shell: bash
+        working-directory: candidate
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tee ../cargo-clippy.log
+
+      - name: Full exact-head tests
+        if: always()
+        shell: bash
+        working-directory: candidate
+        run: |
+          set -o pipefail
+          cargo test --all-targets --all-features 2>&1 | tee ../cargo-test.log
+
+      - name: Repeat inode-replacement regression
+        if: always()
+        shell: bash
+        working-directory: candidate
+        run: |
+          set -euo pipefail
+          : > ../inode-regression.log
+          for attempt in $(seq 1 50); do
+            echo "attempt=$attempt" | tee -a ../inode-regression.log
+            cargo test replacement_after_admission_is_detected -- --exact --nocapture 2>&1 | tee -a ../inode-regression.log
+          done
+
+      - name: Upload immutable certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ores-compose-pr180-84f1e2b-certification
+          path: |
+            exact-head.sha
+            rustc-version.txt
+            cargo-fmt.log
+            cargo-clippy.log
+            cargo-test.log
+            inode-regression.log
+          if-no-files-found: warn
+          retention-days: 30
